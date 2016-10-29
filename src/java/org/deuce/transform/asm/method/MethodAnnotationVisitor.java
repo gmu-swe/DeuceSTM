@@ -1,13 +1,15 @@
 package org.deuce.transform.asm.method;
 
 import org.deuce.objectweb.asm.AnnotationVisitor;
+import org.deuce.objectweb.asm.Opcodes;
 
-public class MethodAnnotationVisitor implements AnnotationVisitor {
+public class MethodAnnotationVisitor extends AnnotationVisitor {
 
 	private final AnnotationVisitor originalVisitor;
 	private final AnnotationVisitor copyVisitor;
 
 	public MethodAnnotationVisitor( AnnotationVisitor originalVisitor, AnnotationVisitor copyVisitor) {
+		super(Opcodes.ASM5, originalVisitor);
 		this.originalVisitor = originalVisitor;
 		this.copyVisitor = copyVisitor;	
 	}

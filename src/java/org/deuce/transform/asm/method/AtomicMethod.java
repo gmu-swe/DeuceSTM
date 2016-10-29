@@ -1,14 +1,18 @@
 package org.deuce.transform.asm.method;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.deuce.Atomic;
 import org.deuce.objectweb.asm.AnnotationVisitor;
 import org.deuce.objectweb.asm.Label;
-import org.deuce.objectweb.asm.MethodAdapter;
 import org.deuce.objectweb.asm.MethodVisitor;
+import org.deuce.objectweb.asm.Opcodes;
 import org.deuce.objectweb.asm.Type;
+import org.deuce.objectweb.asm.commons.AnalyzerAdapter;
 import org.deuce.objectweb.asm.commons.Method;
+import org.deuce.objectweb.asm.tree.FrameNode;
 import org.deuce.transaction.AbortTransactionException;
 import org.deuce.transaction.Context;
 import org.deuce.transaction.ContextDelegator;
@@ -24,7 +28,7 @@ import static org.deuce.objectweb.asm.Opcodes.*;
  *  
  * @author Guy Korland
  */
-public class AtomicMethod extends MethodAdapter{
+public class AtomicMethod extends MethodVisitor {
 
 	final static public String ATOMIC_DESCRIPTOR = Type.getDescriptor(Atomic.class);
 	final static private AtomicInteger ATOMIC_BLOCK_COUNTER = new AtomicInteger(0);
@@ -39,15 +43,19 @@ public class AtomicMethod extends MethodAdapter{
 	final private boolean isStatic;
 	final private int variablesSize;
 	final private Method newMethod;
+	private boolean addFrames;
+	private String methodDescriptor;
 	
 	public AtomicMethod(MethodVisitor mv, String className, String methodName,
-			String descriptor, Method newMethod, boolean isStatic) {
-		super(mv);
+			String descriptor, Method newMethod, boolean isStatic, boolean addFrames) {
+		super(Opcodes.ASM5, mv);
 		this.className = className;
 		this.methodName = methodName;
 		this.newMethod = newMethod;
 		this.isStatic = isStatic;
-
+		this.addFrames = addFrames;
+		this.methodDescriptor = descriptor;
+		
 		Type returnType = Type.getReturnType(descriptor);
 		Type[] argumentTypes = Type.getArgumentTypes(descriptor);
 
@@ -59,12 +67,16 @@ public class AtomicMethod extends MethodAdapter{
 		variablesSize = variablesSize( argumentReolvers, isStatic);
 	}
 	
+	public void setAddFrames(boolean addFrames) {
+		this.addFrames = addFrames;
+	}
 
 	@Override
 	public AnnotationVisitor visitAnnotation(String desc, boolean visible) {
 		final AnnotationVisitor visitAnnotation = super.visitAnnotation(desc, visible);
 		if( AtomicMethod.ATOMIC_DESCRIPTOR.equals(desc)){
-			return new AnnotationVisitor(){
+			return new AnnotationVisitor(Opcodes.ASM5){
+				
 				public void visit(String name, Object value) {
 					if( name.equals("retries"))
 						AtomicMethod.this.retries = (Integer)value;
@@ -137,6 +149,29 @@ public class AtomicMethod extends MethodAdapter{
 
 	}
 	 */
+	public FrameNode getCurrentFrameNode(AnalyzerAdapter analyzerAdapter)
+	{
+		Object[] locals = removeLongsDoubleTopVal(analyzerAdapter.locals);
+		Object[] stack = removeLongsDoubleTopVal(analyzerAdapter.stack);
+		FrameNode ret = new FrameNode(Opcodes.F_FULL, locals.length, locals, stack.length, stack);
+		ret.type = Opcodes.F_NEW;
+		return ret;
+	}
+	public static Object[] removeLongsDoubleTopVal(List<Object> in) {
+		ArrayList<Object> ret = new ArrayList<Object>();
+		boolean lastWas2Word = false;
+		for (Object n : in) {
+			if (n == Opcodes.TOP && lastWas2Word) {
+				//nop
+			} else
+				ret.add(n);
+			if (n == Opcodes.DOUBLE || n == Opcodes.LONG)
+				lastWas2Word = true;
+			else
+				lastWas2Word = false;
+		}
+		return ret.toArray();
+	}
 	@Override
 	public void visitCode() {
 
@@ -147,118 +182,132 @@ public class AtomicMethod extends MethodAdapter{
 		final int exceptionIndex = commitIndex + 1;
 		final int resultIndex = exceptionIndex + 1;
 
+		AnalyzerAdapter an = new AnalyzerAdapter(className, isStatic ? ACC_STATIC: ACC_PUBLIC, methodName, methodDescriptor, mv);
 		Label l0 = new Label();
 		Label l1 = new Label();
 		Label l25 = new Label();
-		mv.visitTryCatchBlock(l0, l1, l25, AbortTransactionException.ABORT_TRANSACTION_EXCEPTION_INTERNAL);  // try{
+		an.visitTryCatchBlock(l0, l1, l25, AbortTransactionException.ABORT_TRANSACTION_EXCEPTION_INTERNAL);  // try{
 		Label l2 = new Label();
-		mv.visitTryCatchBlock(l0, l1, l2, TransactionException.TRANSACTION_EXCEPTION_INTERNAL);  // try{ 
+		an.visitTryCatchBlock(l0, l1, l2, TransactionException.TRANSACTION_EXCEPTION_INTERNAL);  // try{ 
 		Label l3 = new Label();
-		mv.visitTryCatchBlock(l0, l1, l3, Type.getInternalName( Throwable.class));  // try{
+		an.visitTryCatchBlock(l0, l1, l3, Type.getInternalName( Throwable.class));  // try{
 		
 		Label l4 = new Label(); // Throwable throwable = null;
-		mv.visitLabel(l4);
-		mv.visitInsn(ACONST_NULL);
-		mv.visitVarInsn(ASTORE, throwableIndex);
+		an.visitLabel(l4);
+		an.visitInsn(ACONST_NULL);
+		an.visitVarInsn(ASTORE, throwableIndex);
 		
-		Label l5 = getContext(contextIndex); // Context context = ContextDelegator.getInstance();
+		Label l5 = getContext(contextIndex,an); // Context context = ContextDelegator.getInstance();
 			
 		Label l6 = new Label(); // boolean commit = true;
-		mv.visitLabel(l6);
-		mv.visitInsn(ICONST_1);
-		mv.visitVarInsn(ISTORE, commitIndex);
+		an.visitLabel(l6);
+		an.visitInsn(ICONST_1);
+		an.visitVarInsn(ISTORE, commitIndex);
 		
 		Label l7 = new Label(); // ... result = null;
-		mv.visitLabel(l7);
+		an.visitLabel(l7);
 		if( returnReolver != null)
 		{
-			mv.visitInsn( returnReolver.nullValueCode());
-			mv.visitVarInsn( returnReolver.storeCode(), resultIndex);
+			an.visitInsn( returnReolver.nullValueCode());
+			an.visitVarInsn( returnReolver.storeCode(), resultIndex);
 		}
 		
 		Label l8 = new Label(); // for( int i=10 ; ... ; ...)
-		mv.visitLabel(l8);
-		mv.visitLdcInsn( retries);
-		mv.visitVarInsn(ISTORE, indexIndex);
-		
+		an.visitLabel(l8);
+		an.visitLdcInsn( retries);
+		an.visitVarInsn(ISTORE, indexIndex);
+		FrameNode withNoStack = getCurrentFrameNode(an);
+		Object[] locals = withNoStack.local.toArray();
 		Label l9 = new Label();
-		mv.visitLabel(l9);
+		an.visitLabel(l9);
 		Label l10 = new Label();
-		mv.visitJumpInsn(GOTO, l10);
+		an.visitJumpInsn(GOTO, l10);
 		
 		Label l11 = new Label(); // context.init(atomicBlockId, metainf);
-		mv.visitLabel(l11);
-		mv.visitVarInsn(ALOAD, contextIndex);
-		mv.visitLdcInsn(ATOMIC_BLOCK_COUNTER.getAndIncrement());
-		mv.visitLdcInsn(metainf);
-		mv.visitMethodInsn(INVOKEINTERFACE, Context.CONTEXT_INTERNAL, "init", "(ILjava/lang/String;)V");
-		
+		an.visitLabel(l11);
+		if(addFrames)
+			withNoStack.accept(an);
+		an.visitVarInsn(ALOAD, contextIndex);
+		an.visitLdcInsn(ATOMIC_BLOCK_COUNTER.getAndIncrement());
+		an.visitLdcInsn(metainf);
+		an.visitMethodInsn(INVOKEINTERFACE, Context.CONTEXT_INTERNAL, "init", "(ILjava/lang/String;)V", true);
+
 		/* result = foo( context, ...)  */ 
-		mv.visitLabel(l0);
+		an.visitLabel(l0);
 		if( !isStatic) // load this id if not static
-			mv.visitVarInsn(ALOAD, 0);
+			an.visitVarInsn(ALOAD, 0);
 
 		// load the rest of the arguments
 		int local = isStatic ? 0 : 1;
 		for( int i=0 ; i < argumentReolvers.length ; ++i) { 
-			mv.visitVarInsn(argumentReolvers[i].loadCode(), local);
+			an.visitVarInsn(argumentReolvers[i].loadCode(), local);
 			local += argumentReolvers[i].localSize(); // move to the next argument
 		}
 		
-		mv.visitVarInsn(ALOAD, contextIndex); // load the context
+		an.visitVarInsn(ALOAD, contextIndex); // load the context
 		
 		if( isStatic)
-			mv.visitMethodInsn(INVOKESTATIC, className, methodName, newMethod.getDescriptor()); // ... = foo( ...
+			an.visitMethodInsn(INVOKESTATIC, className, methodName, newMethod.getDescriptor(), false); // ... = foo( ...
 		else
-			mv.visitMethodInsn(INVOKEVIRTUAL, className, methodName, newMethod.getDescriptor()); // ... = foo( ...
+			an.visitMethodInsn(INVOKEVIRTUAL, className, methodName, newMethod.getDescriptor(), false); // ... = foo( ...
 
 		if( returnReolver != null) 
-			mv.visitVarInsn(returnReolver.storeCode(), resultIndex); // result = ...
+			an.visitVarInsn(returnReolver.storeCode(), resultIndex); // result = ...
 		
-		mv.visitLabel(l1);
+		an.visitLabel(l1);
 		Label l12 = new Label();
-		mv.visitJumpInsn(GOTO, l12);
+		FrameNode preL12 = getCurrentFrameNode(an);
+		an.visitJumpInsn(GOTO, l12);
 
 		/*catch( AbortTransactionException ex)
 		{
 			throw ex;
 		}*/
-		mv.visitLabel(l25);
-		mv.visitVarInsn(ASTORE, exceptionIndex);
+		an.visitLabel(l25);
+		if(addFrames)
+			an.visitFrame(Opcodes.F_NEW, locals.length, locals, 1, new Object[] {"org/deuce/transaction/AbortTransactionException"});
+
+		an.visitVarInsn(ASTORE, exceptionIndex);
 		Label l27 = new Label();
-		mv.visitVarInsn(ALOAD, contextIndex);
-		mv.visitMethodInsn(INVOKEINTERFACE, Context.CONTEXT_INTERNAL, "rollback", "()V");
-		mv.visitLabel(l27);
-		mv.visitVarInsn(ALOAD, exceptionIndex);
-		mv.visitInsn(ATHROW);
+		an.visitVarInsn(ALOAD, contextIndex);
+		an.visitMethodInsn(INVOKEINTERFACE, Context.CONTEXT_INTERNAL, "rollback", "()V", true);
+		an.visitLabel(l27);
+		an.visitVarInsn(ALOAD, exceptionIndex);
+		an.visitInsn(ATHROW);
 		Label l28 = new Label();
-		mv.visitLabel(l28);
-		mv.visitJumpInsn(GOTO, l12);
+		an.visitLabel(l28);
+		an.visitJumpInsn(GOTO, l12);
 		
 		/*catch( TransactionException ex)
 		{
 			commit = false;
 		}*/
-		mv.visitLabel(l2);
-		mv.visitVarInsn(ASTORE, exceptionIndex);
+		an.visitLabel(l2);
+		if(addFrames)
+			an.visitFrame(Opcodes.F_NEW, locals.length, locals, 1, new Object[] {"org/deuce/transaction/TransactionException"});
+
+		an.visitVarInsn(ASTORE, exceptionIndex);
 		Label l13 = new Label();
-		mv.visitLabel(l13);
-		mv.visitInsn(ICONST_0);
-		mv.visitVarInsn(ISTORE, commitIndex);
+		an.visitLabel(l13);
+		an.visitInsn(ICONST_0);
+		an.visitVarInsn(ISTORE, commitIndex);
 		Label l14 = new Label();
-		mv.visitLabel(l14);
-		mv.visitJumpInsn(GOTO, l12);
+		an.visitLabel(l14);
+		an.visitJumpInsn(GOTO, l12);
 		
 		/*catch( Throwable ex)
 		{
 			throwable = ex;
 		}*/
-		mv.visitLabel(l3);
-		mv.visitVarInsn(ASTORE, exceptionIndex);
+		an.visitLabel(l3);
+		if(addFrames)
+			mv.visitFrame(Opcodes.F_NEW, locals.length, locals, 1, new Object[] {"java/lang/Throwable"});
+
+		an.visitVarInsn(ASTORE, exceptionIndex);
 		Label l15 = new Label();
-		mv.visitLabel(l15);
-		mv.visitVarInsn(ALOAD, exceptionIndex);
-		mv.visitVarInsn(ASTORE, throwableIndex);
+		an.visitLabel(l15);
+		an.visitVarInsn(ALOAD, exceptionIndex);
+		an.visitVarInsn(ASTORE, throwableIndex);
 		
 		/*
 		 * if( commit )
@@ -275,81 +324,95 @@ public class AtomicMethod extends MethodAdapter{
 				commit = true;
 			}
 		 */
-		mv.visitLabel(l12); // if( commit )
-		mv.visitVarInsn(ILOAD, commitIndex);
+		an.visitLabel(l12); // if( commit )
+		if(addFrames)
+			preL12.accept(an);
+		an.visitVarInsn(ILOAD, commitIndex);
 		Label l16 = new Label();
-		mv.visitJumpInsn(IFEQ, l16);
+		an.visitJumpInsn(IFEQ, l16);
 		
 		Label l17 = new Label(); // if( context.commit())
-		mv.visitLabel(l17);
-		mv.visitVarInsn(ALOAD, contextIndex);
-		mv.visitMethodInsn(INVOKEINTERFACE, Context.CONTEXT_INTERNAL, "commit", "()Z");
+		an.visitLabel(l17);
+		an.visitVarInsn(ALOAD, contextIndex);
+		an.visitMethodInsn(INVOKEINTERFACE, Context.CONTEXT_INTERNAL, "commit", "()Z", true);
 		Label l18 = new Label();
-		mv.visitJumpInsn(IFEQ, l18);
+		an.visitJumpInsn(IFEQ, l18);
 		
 		//		if( throwable != null)
 		//			throw throwable;
 		Label l19 = new Label();
-		mv.visitLabel(l19);
-		mv.visitVarInsn(ALOAD, throwableIndex);
+		an.visitLabel(l19);
+		an.visitVarInsn(ALOAD, throwableIndex);
 		Label l20 = new Label();
-		mv.visitJumpInsn(IFNULL, l20);
+		an.visitJumpInsn(IFNULL, l20);
 		Label l21 = new Label();
-		mv.visitLabel(l21);
-		mv.visitVarInsn(ALOAD, throwableIndex);
-		mv.visitInsn(ATHROW);
+		an.visitLabel(l21);
+		an.visitVarInsn(ALOAD, throwableIndex);
+		an.visitInsn(ATHROW);
 		
 		// return
-		mv.visitLabel(l20);
+		an.visitLabel(l20);
+		if(addFrames)
+			preL12.accept(an);
+
 		if( returnReolver == null) {
-			mv.visitInsn( RETURN); // return;
+			an.visitInsn( RETURN); // return;
 		}
 		else {
-			mv.visitVarInsn(returnReolver.loadCode(), resultIndex); // return result;
-			mv.visitInsn(returnReolver.returnCode());
+			an.visitVarInsn(returnReolver.loadCode(), resultIndex); // return result;
+			an.visitInsn(returnReolver.returnCode());
 		}
 		
-		mv.visitJumpInsn(GOTO, l18);
+		an.visitJumpInsn(GOTO, l18);
 		
 		// else
-		mv.visitLabel(l16); // context.rollback(); 
-		mv.visitVarInsn(ALOAD, contextIndex);
-		mv.visitMethodInsn(INVOKEINTERFACE, Context.CONTEXT_INTERNAL, "rollback", "()V");
+		an.visitLabel(l16); // context.rollback(); 
+		if(addFrames)
+			preL12.accept(an);
+
+		an.visitVarInsn(ALOAD, contextIndex);
+		an.visitMethodInsn(INVOKEINTERFACE, Context.CONTEXT_INTERNAL, "rollback", "()V", true);
 		
-		mv.visitInsn(ICONST_1); // commit = true;
-		mv.visitVarInsn(ISTORE, commitIndex);
+		an.visitInsn(ICONST_1); // commit = true;
+		an.visitVarInsn(ISTORE, commitIndex);
 		
-		mv.visitLabel(l18);  // for( ... ; i>0 ; --i) 
-		mv.visitIincInsn(indexIndex, -1);
-		mv.visitLabel(l10);
-		mv.visitVarInsn(ILOAD, indexIndex);
-		mv.visitJumpInsn(IFGT, l11);
+		an.visitLabel(l18);  // for( ... ; i>0 ; --i) 
+		if(addFrames)
+			preL12.accept(an);
+
+		an.visitIincInsn(indexIndex, -1);
+		an.visitLabel(l10);
+		if(addFrames)
+			preL12.accept(an);
+
+		an.visitVarInsn(ILOAD, indexIndex);
+		an.visitJumpInsn(IFGT, l11);
 		
 		// throw new TransactionException("Failed to commit ...");
 		Label l23 = throwTransactionException();
 		
 		/* locals */
 		Label l24 = new Label();
-		mv.visitLabel(l24);
-		mv.visitLocalVariable("throwable", "Ljava/lang/Throwable;", null, l5, l24, throwableIndex);
-		mv.visitLocalVariable("context", Context.CONTEXT_DESC, null, l6, l24, contextIndex);
-		mv.visitLocalVariable("commit", "Z", null, l7, l24, commitIndex);
+		an.visitLabel(l24);
+		an.visitLocalVariable("throwable", "Ljava/lang/Throwable;", null, l5, l24, throwableIndex);
+		an.visitLocalVariable("context", Context.CONTEXT_DESC, null, l6, l24, contextIndex);
+		an.visitLocalVariable("commit", "Z", null, l7, l24, commitIndex);
 		if( returnReolver != null)
-			mv.visitLocalVariable("result", returnReolver.toString(), null, l8, l24, resultIndex);
-		mv.visitLocalVariable("i", "I", null, l9, l23, indexIndex);
-		mv.visitLocalVariable("ex", "Lorg/deuce/transaction/AbortTransactionException;", null, l27, l28, exceptionIndex);
-		mv.visitLocalVariable("ex", "Lorg/deuce/transaction/TransactionException;", null, l13, l14, exceptionIndex);
-		mv.visitLocalVariable("ex", "Ljava/lang/Throwable;", null, l15, l12, exceptionIndex);
+			an.visitLocalVariable("result", returnReolver.toString(), null, l8, l24, resultIndex);
+		an.visitLocalVariable("i", "I", null, l9, l23, indexIndex);
+		an.visitLocalVariable("ex", "Lorg/deuce/transaction/AbortTransactionException;", null, l27, l28, exceptionIndex);
+		an.visitLocalVariable("ex", "Lorg/deuce/transaction/TransactionException;", null, l13, l14, exceptionIndex);
+		an.visitLocalVariable("ex", "Ljava/lang/Throwable;", null, l15, l12, exceptionIndex);
 		
-		mv.visitMaxs(6 + variablesSize, resultIndex + 2);
-		mv.visitEnd();
+		an.visitMaxs(6 + variablesSize, resultIndex + 2);
+		an.visitEnd();
 	}
 
-	private Label getContext(final int contextIndex) {
+	private Label getContext(final int contextIndex, AnalyzerAdapter an) {
 		Label label = new Label();
-		mv.visitLabel(label); // Context context = ContextDelegator.getInstance();
-		mv.visitMethodInsn(INVOKESTATIC, ContextDelegator.CONTEXT_DELEGATOR_INTERNAL, "getInstance", "()Lorg/deuce/transaction/Context;");
-		mv.visitVarInsn(ASTORE, contextIndex);
+		an.visitLabel(label); // Context context = ContextDelegator.getInstance();
+		an.visitMethodInsn(INVOKESTATIC, ContextDelegator.CONTEXT_DELEGATOR_INTERNAL, "getInstance", "()Lorg/deuce/transaction/Context;", false);
+		an.visitVarInsn(ASTORE, contextIndex);
 		return label;
 	}
 
@@ -359,7 +422,7 @@ public class AtomicMethod extends MethodAdapter{
 		mv.visitTypeInsn(NEW, "org/deuce/transaction/TransactionException");
 		mv.visitInsn(DUP);
 		mv.visitLdcInsn("Failed to commit the transaction in the defined retries.");
-		mv.visitMethodInsn(INVOKESPECIAL, "org/deuce/transaction/TransactionException", "<init>", "(Ljava/lang/String;)V");
+		mv.visitMethodInsn(INVOKESPECIAL, "org/deuce/transaction/TransactionException", "<init>", "(Ljava/lang/String;)V", false);
 		mv.visitInsn(ATHROW);
 		return label;
 	}

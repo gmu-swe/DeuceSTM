@@ -1,11 +1,17 @@
 package org.deuce.transform.asm;
 
 
-import org.deuce.objectweb.asm.ClassAdapter;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.PrintWriter;
+
 import org.deuce.objectweb.asm.ClassReader;
+import org.deuce.objectweb.asm.ClassVisitor;
 import org.deuce.objectweb.asm.ClassWriter;
 import org.deuce.objectweb.asm.MethodVisitor;
+import org.deuce.objectweb.asm.Opcodes;
 import org.deuce.objectweb.asm.commons.JSRInlinerAdapter;
+import org.deuce.objectweb.asm.util.TraceClassVisitor;
 
 
 /**
@@ -13,7 +19,7 @@ import org.deuce.objectweb.asm.commons.JSRInlinerAdapter;
  * @author Guy Korland
  * @since 1.0
  */
-public class ByteCodeVisitor extends ClassAdapter{
+public class ByteCodeVisitor extends ClassVisitor {
 
 	@Override
 	public MethodVisitor visitMethod(int access, String name, String desc,
@@ -26,9 +32,9 @@ public class ByteCodeVisitor extends ClassAdapter{
 	//The maximal bytecode version to transform.
 	private int maximalversion = Integer.MAX_VALUE;
 
-	public ByteCodeVisitor( String className) {
+	public ByteCodeVisitor(String className) {
 
-		super(new ClassWriter( ClassWriter.COMPUTE_MAXS));
+		super(Opcodes.ASM5, new ClassWriter(ClassWriter.COMPUTE_MAXS));
 		this.className = className;
 	}
 	
@@ -42,8 +48,23 @@ public class ByteCodeVisitor extends ClassAdapter{
 	
 	public byte[] visit( byte[] bytes){
 		ClassReader cr = new ClassReader(bytes);
+		PrintWriter pw = null;
+//		try {
+			pw = new PrintWriter(System.err,true);
+//		} catch (FileNotFoundException e) {
+//			// TODO Auto-generated catch block
+//			e.printStackTrace();
+//		}
+//		TraceClassVisitor tcv = new TraceClassVisitor(this,pw);
+		try{
 		cr.accept(this, ClassReader.EXPAND_FRAMES);
 		return ((ClassWriter)super.cv).toByteArray();
+		}
+		catch(Throwable t)
+		{
+//			tcv.visitEnd();
+			throw new IllegalStateException(t);
+		}
 	}
 	
 	

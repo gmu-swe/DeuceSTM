@@ -2,14 +2,14 @@ package org.deuce.transform.asm.method;
 
 import java.util.List;
 
-import org.deuce.objectweb.asm.MethodAdapter;
 import org.deuce.objectweb.asm.MethodVisitor;
+import org.deuce.objectweb.asm.Opcodes;
 import org.deuce.objectweb.asm.Type;
 import org.deuce.transform.asm.Field;
 
 import static org.deuce.objectweb.asm.Opcodes.*;
 
-public class StaticMethodTransformer extends MethodAdapter {
+public class StaticMethodTransformer extends MethodVisitor {
 
 	final static public String CLASS_BASE = "__CLASS_BASE__";
 	
@@ -21,7 +21,7 @@ public class StaticMethodTransformer extends MethodAdapter {
 	
 	public StaticMethodTransformer(MethodVisitor mv, MethodVisitor staticMethod, List<Field> fields,
 			String staticField, String className, String fieldsHolderName) {
-		super(mv);
+		super(Opcodes.ASM5, mv);
 		this.staticMethod = staticMethod;
 		this.fields = fields;
 		this.staticField = staticField;
@@ -44,9 +44,9 @@ public class StaticMethodTransformer extends MethodAdapter {
 		staticMethod.visitLdcInsn(Type.getObjectType(className));
 		staticMethod.visitLdcInsn(field.getFieldName());
 		staticMethod.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Class", "getDeclaredField",
-		"(Ljava/lang/String;)Ljava/lang/reflect/Field;");
+		"(Ljava/lang/String;)Ljava/lang/reflect/Field;", false);
 		staticMethod.visitMethodInsn(INVOKESTATIC, "org/deuce/reflection/AddressUtil",
-				"getAddress", "(Ljava/lang/reflect/Field;)J");
+				"getAddress", "(Ljava/lang/reflect/Field;)J", false);
 		staticMethod.visitFieldInsn(PUTSTATIC, fieldsHolderName, field.getFieldNameAddress(), "J");
 	}
 
@@ -54,7 +54,7 @@ public class StaticMethodTransformer extends MethodAdapter {
 		staticMethod.visitLdcInsn(Type.getObjectType(className));
 		staticMethod.visitLdcInsn(staticFieldBase);
 		staticMethod.visitMethodInsn(INVOKESTATIC, "org/deuce/reflection/AddressUtil",
-				"staticFieldBase", "(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Object;");
+				"staticFieldBase", "(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Object;", false);
 		staticMethod.visitFieldInsn(PUTSTATIC, fieldsHolderName, CLASS_BASE, "Ljava/lang/Object;");
 	}
 

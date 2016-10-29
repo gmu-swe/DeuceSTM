@@ -1,10 +1,11 @@
 package org.deuce.transform.asm;
 
 
-import org.deuce.objectweb.asm.ClassAdapter;
 import org.deuce.objectweb.asm.ClassReader;
+import org.deuce.objectweb.asm.ClassVisitor;
 import org.deuce.objectweb.asm.ClassWriter;
 import org.deuce.objectweb.asm.MethodVisitor;
+import org.deuce.objectweb.asm.Opcodes;
 import org.deuce.objectweb.asm.commons.JSRInlinerAdapter;
 import org.deuce.transform.Exclude;
 
@@ -15,14 +16,14 @@ import org.deuce.transform.Exclude;
  * @since 1.0
  */
 @Exclude
-public class FramesCodeVisitor extends ClassAdapter{
+public class FramesCodeVisitor extends ClassVisitor{
 
 	final static private int JAVA5_VERSION = 49;
 	final static private int JAVA6_VERSION = 50;
 
 	public FramesCodeVisitor( String className) {
 
-		super(new CommonClassWriter( ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES, className));
+		super(Opcodes.ASM5, new CommonClassWriter( ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES, className));
 	}
 	
 	@Override

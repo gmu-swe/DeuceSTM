@@ -4,6 +4,7 @@ import java.lang.annotation.Annotation;
 import java.util.LinkedList;
 
 import org.deuce.objectweb.asm.AnnotationVisitor;
+import org.deuce.objectweb.asm.ClassVisitor;
 import org.deuce.objectweb.asm.FieldVisitor;
 import org.deuce.objectweb.asm.MethodVisitor;
 import org.deuce.objectweb.asm.Opcodes;
@@ -33,11 +34,11 @@ public class ClassTransformer extends ByteCodeVisitor implements FieldsHolder{
 	private boolean isInterface;
 	private boolean isEnum;
 	private MethodVisitor staticMethod;
-	
+	private boolean addFrames;
 	private final FieldsHolder fieldsHolder;
 
 	public ClassTransformer( String className, FieldsHolder fieldsHolder){
-		super( className);
+		super(className);
 		this.fieldsHolder = fieldsHolder == null ? this : fieldsHolder;
 	}
 
@@ -48,7 +49,7 @@ public class ClassTransformer extends ByteCodeVisitor implements FieldsHolder{
 		fieldsHolder.visit(superName);
 		isInterface = (access & Opcodes.ACC_INTERFACE) != 0;
 		isEnum = ENUM_DESC.equals(superName);
-		
+		addFrames = version < 100 && version >= 50;
 		for(String inter : interfaces){
 			if( inter.equals(ANNOTATION_NAME)){
 				exclude = true;
@@ -137,7 +138,7 @@ public class ClassTransformer extends ByteCodeVisitor implements FieldsHolder{
 				signature, exceptions);
 
 		return new MethodTransformer( originalMethod, copyMethod, className,
-				access, name, desc, newMethod, fieldsHolder);
+				access, name, desc, newMethod, fieldsHolder, addFrames);
 	}
 
 	/**
@@ -157,7 +158,7 @@ public class ClassTransformer extends ByteCodeVisitor implements FieldsHolder{
 		int argumentsSize = Util.calcArgumentsSize(isStatic, newMethod);
 		copyMethod.visitVarInsn(Opcodes.ALOAD, argumentsSize - 1); // load context
 		copyMethod.visitMethodInsn( Opcodes.INVOKESTATIC, ContextDelegator.CONTEXT_DELEGATOR_INTERNAL,
-				ContextDelegator.IRREVOCABLE_METHOD_NAME, ContextDelegator.IRREVOCABLE_METHOD_DESC);
+				ContextDelegator.IRREVOCABLE_METHOD_NAME, ContextDelegator.IRREVOCABLE_METHOD_DESC, false);
 		
 		
 		// load the arguments before calling the original method
@@ -176,7 +177,7 @@ public class ClassTransformer extends ByteCodeVisitor implements FieldsHolder{
 		}
 		
 		// call the original method
-		copyMethod.visitMethodInsn(isStatic ? Opcodes.INVOKESTATIC : Opcodes.INVOKEVIRTUAL, className, name, desc);
+		copyMethod.visitMethodInsn(isStatic ? Opcodes.INVOKESTATIC : Opcodes.INVOKEVIRTUAL, className, name, desc, false);
 		TypeCodeResolver returnReolver = TypeCodeResolverFactory.getReolver(newMethod.getReturnType());
 		if( returnReolver == null) {
 			copyMethod.visitInsn( Opcodes.RETURN); // return;
@@ -208,7 +209,7 @@ public class ClassTransformer extends ByteCodeVisitor implements FieldsHolder{
 					super.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_SYNTHETIC, "ordinal", "(Lorg/deuce/transaction/Context;)I", null, null);
 				ordinalMethod.visitCode();
 				ordinalMethod.visitVarInsn(Opcodes.ALOAD, 0);
-				ordinalMethod.visitMethodInsn(Opcodes.INVOKEVIRTUAL, className, "ordinal", "()I");
+				ordinalMethod.visitMethodInsn(Opcodes.INVOKEVIRTUAL, className, "ordinal", "()I", false);
 				ordinalMethod.visitInsn(Opcodes.IRETURN);
 				ordinalMethod.visitMaxs(1, 2);
 				ordinalMethod.visitEnd();

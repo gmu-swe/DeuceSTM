@@ -1,7 +1,6 @@
 package org.deuce.transform.asm;
 
 import org.deuce.objectweb.asm.ClassWriter;
-import org.deuce.objectweb.asm.MethodAdapter;
 import org.deuce.objectweb.asm.MethodVisitor;
 import org.deuce.objectweb.asm.Opcodes;
 
@@ -61,12 +60,12 @@ public class ExternalFieldsHolder implements FieldsHolder {
 	/**
 	* A wrapper method that is used to close the new <clinit>.
 	*/
-	private static class ExternalMethodVisitor extends MethodAdapter{
+	private static class ExternalMethodVisitor extends MethodVisitor{
 
 		private boolean ended = false;
 		
 		public ExternalMethodVisitor(MethodVisitor mv) {
-			super(mv);
+			super(Opcodes.ASM5, mv);
 		}
 
 		@Override

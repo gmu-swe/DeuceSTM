@@ -3,12 +3,12 @@ package org.deuce.transaction.global;
 import org.deuce.Atomic;
 import org.deuce.objectweb.asm.AnnotationVisitor;
 import org.deuce.objectweb.asm.Label;
-import org.deuce.objectweb.asm.MethodAdapter;
 import org.deuce.objectweb.asm.MethodVisitor;
+import org.deuce.objectweb.asm.Opcodes;
 import org.deuce.objectweb.asm.Type;
 import static org.deuce.objectweb.asm.Opcodes.*;
 
-public class MethodTransformer extends MethodAdapter{
+public class MethodTransformer extends MethodVisitor {
 
 	final static private String ATOMIC_METHOD_POST = "__atomic__"; 
 
@@ -23,7 +23,7 @@ public class MethodTransformer extends MethodAdapter{
 
 	public MethodTransformer( MethodVisitor visitor, int access, String name, String desc,
 			String signature, String[] exceptions, ClassTransformer classTransformer) {
-		super(visitor);
+		super(Opcodes.ASM5, visitor);
 		this.access = access;
 		this.name = name;
 		this.desc = desc;
@@ -130,11 +130,11 @@ public class MethodTransformer extends MethodAdapter{
 		}
 		if( isNonStatic) {
 			methodVisitor.visitMethodInsn(INVOKESPECIAL, classTransformer.getClassName(),
-					name + ATOMIC_METHOD_POST, desc);
+					name + ATOMIC_METHOD_POST, desc, false);
 		}
 		else {
 			methodVisitor.visitMethodInsn(INVOKESTATIC, classTransformer.getClassName(),
-					name + ATOMIC_METHOD_POST, desc);
+					name + ATOMIC_METHOD_POST, desc, false);
 		}
 	}
 

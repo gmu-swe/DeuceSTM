@@ -18,7 +18,7 @@ import org.deuce.transform.util.Util;
 
 import static org.deuce.objectweb.asm.Opcodes.*;
 
-public class MethodTransformer implements MethodVisitor{
+public class MethodTransformer extends MethodVisitor{
 
 	final static private String UNSAFE_DESCRIPTOR = Type.getDescriptor(Unsafe.class);
 	final static private String IRREVOCABLE_DESCRIPTOR = Type.getDescriptor(Irrevocable.class);
@@ -35,19 +35,21 @@ public class MethodTransformer implements MethodVisitor{
 	final private boolean isStatic;
 	private boolean isIrrevocable;
 	final private Method newMethod;
+	final boolean addFrames;
 
 	public MethodTransformer(MethodVisitor originalMethod, MethodVisitor copyMethod, 
 			String className, int access, String methodName, String descriptor, Method newMethod,
-			FieldsHolder fieldsHolder) {
-		
+			FieldsHolder fieldsHolder, boolean addFrames) {
+		super(Opcodes.ASM5, originalMethod);
 		this.originalMethod = originalMethod;
 		this.newMethod = newMethod;
 		this.isStatic = (access & ACC_STATIC) != 0;
 		this.originalCopyMethod = copyMethod; // save duplicate method without instrumentation.
+		this.addFrames = addFrames;
 		
 		// The AnalyzerAdapter delegates the call to the DuplicateMethod, while the DuplicateMethod uses
 		// the analyzer for stack state in the original method.
-		DuplicateMethod duplicateMethod = new DuplicateMethod( copyMethod, isStatic, newMethod, fieldsHolder);
+		DuplicateMethod duplicateMethod = new DuplicateMethod( copyMethod, isStatic, newMethod, fieldsHolder, addFrames);
 		AnalyzerAdapter analyzerAdapter = new AnalyzerAdapter( className, access, methodName, descriptor, duplicateMethod);
 		duplicateMethod.setAnalyzer( analyzerAdapter);
 		
@@ -65,7 +67,7 @@ public class MethodTransformer implements MethodVisitor{
 			int argumentsSize = Util.calcArgumentsSize(isStatic, newMethod);
 			copyMethod.visitVarInsn(Opcodes.ALOAD, argumentsSize - 1); // load context
 			copyMethod.visitMethodInsn( Opcodes.INVOKESTATIC, ContextDelegator.CONTEXT_DELEGATOR_INTERNAL,
-					ContextDelegator.IRREVOCABLE_METHOD_NAME, ContextDelegator.IRREVOCABLE_METHOD_DESC);
+					ContextDelegator.IRREVOCABLE_METHOD_NAME, ContextDelegator.IRREVOCABLE_METHOD_DESC, false);
 		}
 	
 	}
@@ -76,7 +78,7 @@ public class MethodTransformer implements MethodVisitor{
 		// need to create an atomic method from the original method
 		if( AtomicMethod.ATOMIC_DESCRIPTOR.equals(desc) && !(originalMethod instanceof AtomicMethod))
 			originalMethod = new AtomicMethod( originalMethod, className, methodName,
-					descriptor, newMethod, isStatic);
+					descriptor, newMethod, isStatic, addFrames);
 
 		if( UNSAFE_DESCRIPTOR.equals(desc)) // if marked as Unsafe no just duplicate the method as is.
 			copyMethod = originalCopyMethod;
@@ -175,9 +177,9 @@ public class MethodTransformer implements MethodVisitor{
 	}
 
 
-	public void visitMethodInsn(int opcode, String owner, String name, String desc) {
-		originalMethod.visitMethodInsn(opcode, owner, name, desc);
-		copyMethod.visitMethodInsn(opcode, owner, name, desc);
+	public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
+		originalMethod.visitMethodInsn(opcode, owner, name, desc, itf);
+		copyMethod.visitMethodInsn(opcode, owner, name, desc, itf);
 	}
 
 	public void visitMultiANewArrayInsn(String desc, int dims) {
