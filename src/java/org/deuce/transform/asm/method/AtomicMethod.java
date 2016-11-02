@@ -482,10 +482,6 @@ public class AtomicMethod extends MethodVisitor {
 	}
 
 	@Override
-	public void visitMethodInsn(int opcode, String owner, String name, String desc) {
-	}
-
-	@Override
 	public void visitMultiANewArrayInsn(String desc, int dims) {
 	}
 

@@ -52,17 +52,17 @@ public class DuplicateMethod extends MethodVisitor {
 
 	@Override
 	public void visitMethodInsn(int opcode, String owner, String name,
-			String desc) 
+			String desc, boolean isItfc) 
 	{
 		if( ExcludeIncludeStore.exclude(owner))
 		{
-			super.visitMethodInsn(opcode, owner, name, desc, false); // ... = foo( ...
+			super.visitMethodInsn(opcode, owner, name, desc, isItfc); // ... = foo( ...
 		}
 		else
 		{
 			super.visitVarInsn(ALOAD, argumentsSize - 1); // load context
 			Method newMethod = ClassTransformer.createNewMethod(name, desc);
-			super.visitMethodInsn(opcode, owner, name, newMethod.getDescriptor(), false); // ... = foo( ...
+			super.visitMethodInsn(opcode, owner, name, newMethod.getDescriptor(), isItfc); // ... = foo( ...
 		}
 	}
 	public static Object[] removeLongsDoubleTopVal(List<Object> in, Object extra) {
