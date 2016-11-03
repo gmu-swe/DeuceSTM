@@ -200,7 +200,7 @@ public class ClassTransformer extends ByteCodeVisitor implements FieldsHolder{
 				MethodVisitor method = visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
 				method.visitCode();
 				method.visitInsn(Opcodes.RETURN);
-				method.visitMaxs(100, 100); // TODO set the right value
+				method.visitMaxs(0, 0);
 				method.visitEnd();
 
 			}

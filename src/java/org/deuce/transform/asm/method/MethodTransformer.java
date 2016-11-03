@@ -6,6 +6,7 @@ import org.deuce.Irrevocable;
 import org.deuce.Unsafe;
 import org.deuce.objectweb.asm.AnnotationVisitor;
 import org.deuce.objectweb.asm.Attribute;
+import org.deuce.objectweb.asm.Handle;
 import org.deuce.objectweb.asm.Label;
 import org.deuce.objectweb.asm.MethodVisitor;
 import org.deuce.objectweb.asm.Opcodes;
@@ -118,7 +119,15 @@ public class MethodTransformer extends MethodVisitor{
 
 	public void visitFrame(int type, int local, Object[] local2, int stack, Object[] stack2) {
 		originalMethod.visitFrame(type, local, local2, stack, stack2);
-		copyMethod.visitFrame(type, local, local2, stack, stack2);
+		Object[] stack2FixedLabels = new Object[stack2.length];
+		for(int i = 0; i < stack ; i++)
+		{
+			if (stack2[i] instanceof Label)
+				stack2FixedLabels[i] = getLabel((Label) stack2[i]);
+			else
+				stack2FixedLabels[i] = stack2[i];
+		}
+		copyMethod.visitFrame(type, local, local2, stack, stack2FixedLabels);
 	}
 
 	public void visitIincInsn(int var, int increment) {
@@ -182,6 +191,11 @@ public class MethodTransformer extends MethodVisitor{
 		copyMethod.visitMethodInsn(opcode, owner, name, desc, itf);
 	}
 
+	@Override
+	public void visitInvokeDynamicInsn(String name, String desc, Handle bsm, Object... bsmArgs) {
+		originalMethod.visitInvokeDynamicInsn(name, desc, bsm, bsmArgs);
+		copyMethod.visitInvokeDynamicInsn(name, desc, bsm, bsmArgs);
+	}
 	public void visitMultiANewArrayInsn(String desc, int dims) {
 		originalMethod.visitMultiANewArrayInsn(desc, dims);
 		copyMethod.visitMultiANewArrayInsn(desc, dims);

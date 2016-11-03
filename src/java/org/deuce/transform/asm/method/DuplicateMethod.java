@@ -84,6 +84,8 @@ public class DuplicateMethod extends MethodVisitor {
 	}
 	public FrameNode getCurrentFrameNode()
 	{
+		if(!addFrames)
+			return new FrameNode(0, 0, new Object[0], 0, new Object[0]);
 		Object[] locals = removeLongsDoubleTopVal(analyzerAdapter.locals, "org/deuce/transaction/Context");
 		Object[] stack = removeLongsDoubleTopVal(analyzerAdapter.stack, null);
 		FrameNode ret = new FrameNode(Opcodes.F_FULL, locals.length, locals, stack.length, stack);
@@ -96,6 +98,7 @@ public class DuplicateMethod extends MethodVisitor {
 		case Type.BOOLEAN:
 		case Type.BYTE:
 		case Type.CHAR:
+		case Type.SHORT:
 			return Opcodes.INTEGER;
 		case Type.FLOAT:
 			return Opcodes.FLOAT;
@@ -108,7 +111,7 @@ public class DuplicateMethod extends MethodVisitor {
 		case Type.OBJECT:
 			return t.getInternalName();
 		default:
-			throw new UnsupportedOperationException();
+			throw new UnsupportedOperationException(t.toString());
 		}
 	}
 	/**
@@ -121,7 +124,7 @@ public class DuplicateMethod extends MethodVisitor {
 			super.visitFieldInsn(opcode, owner, name, desc); // ... = foo( ...
 			return;
 		}
-		
+
 		FrameNode topFn = getCurrentFrameNode();
 		LinkedList<Object> stackWhenDone = new LinkedList<Object>(topFn.stack);
 		String fieldsHolderName = fieldsHolder.getFieldsHolderName(owner);
@@ -134,6 +137,7 @@ public class DuplicateMethod extends MethodVisitor {
 		Label l2 = new Label();
 		mv.visitJumpInsn(GOTO, l2);
 		mv.visitLabel(l1);
+		
 		if(addFrames)
 			topFn.accept(mv);
 		final Type type = Type.getType(desc);
@@ -151,16 +155,20 @@ public class DuplicateMethod extends MethodVisitor {
 			
 			if( type.getSort() >= Type.ARRAY) // non primitive
 				super.visitTypeInsn( CHECKCAST, Type.getType(desc).getInternalName());
-			stackWhenDone.pop();
-			stackWhenDone.add(getStackTypeForType(type));
+			if (addFrames) {
+				stackWhenDone.pop();
+				stackWhenDone.add(getStackTypeForType(type));
+			}
 			break;
 		case PUTFIELD:
 			super.visitFieldInsn( GETSTATIC, fieldsHolderName, Util.getAddressField(name) , "J");
 			super.visitVarInsn(ALOAD, argumentsSize - 1); // load context
 			super.visitMethodInsn( INVOKESTATIC, ContextDelegator.CONTEXT_DELEGATOR_INTERNAL,
 					ContextDelegator.WRITE_METHOD_NAME, ContextDelegator.getWriteMethodDesc(type), false);
-			stackWhenDone.pop();
-			stackWhenDone.pop();
+			if (addFrames) {
+				stackWhenDone.pop();
+				stackWhenDone.pop();
+			}
 			break;
 		case GETSTATIC: // check support for static fields
 			super.visitFieldInsn(GETSTATIC, fieldsHolderName, 
@@ -186,7 +194,9 @@ public class DuplicateMethod extends MethodVisitor {
 			super.visitVarInsn(ALOAD, argumentsSize - 1); // load context
 			super.visitMethodInsn(INVOKESTATIC, ContextDelegator.CONTEXT_DELEGATOR_INTERNAL,
 					ContextDelegator.STATIC_WRITE_METHOD_NAME, ContextDelegator.getStaticWriteMethodDesc(type), false);
-			stackWhenDone.pop();
+			if (addFrames) {
+				stackWhenDone.pop();
+			}
 			break;
 		default:
 			throw new UnsupportedOperationException();
